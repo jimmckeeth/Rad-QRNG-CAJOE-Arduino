@@ -1,0 +1,5 @@
+__pycache__/
+data/*.bin
+third_party/
+data/*.raw
+data/*.hex

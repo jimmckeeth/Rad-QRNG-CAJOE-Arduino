@@ -1,0 +1,3 @@
+[submodule "sp800_22_tests-py"]
+	path = sp800_22_tests-py
+	url = https://github.com/jimmckeeth/sp800_22_tests-py
