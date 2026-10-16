@@ -1,8 +1,8 @@
 # Geiger-Counter Based QRNG
 
-*Gather quantum entropy at home.*  
+*Gather quantum entropy at home.*  ![RAD-QRNG Logo](./RAD-QRNG.webp)
 
-Uses the commonly available RadiationD-v1.1 (CAJOE) kit with the M4011 tube → Arduino Mega or UNO (hardware time-stamping) → Python (analysis + extraction). See [HARDWARE.md](./HARDWARE.md), including the short [UNO adaptation](./HARDWARE.md#arduino-uno).
+Uses the commonly available RadiationD-v1.1 (CAJOE) kit with the M4011 tube → Arduino Mega or UNO (hardware time-stamping) → Python (analysis + extraction). See [HARDWARE.md](./HARDWARE.md).
 
 ![Sample capture of 1714 events](./data/geiger-20261013-005942.png)
 

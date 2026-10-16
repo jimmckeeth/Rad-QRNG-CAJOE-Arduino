@@ -55,6 +55,8 @@ The pulse is 5 V logic, which both boards handle directly.
 
 The sketch `firmware/geiger_capture/geiger_capture.ino` timestamps every pulse with a hardware input-capture timer and streams `seq,ticks` over USB serial at 115200 baud. It selects Timer4/pin 49 for a Mega or Timer1/pin 8 for an UNO at compile time.
 
+### Arduino Mega 
+
 With [`arduino-cli`](https://arduino.github.io/arduino-cli/latest/installation/) (single binary; or `brew install arduino-cli`, or the install script on that page):
 
 ```
@@ -69,11 +71,6 @@ Or with the [Arduino IDE](https://www.arduino.cc/en/software): open the `.ino`, 
 
 ### Arduino UNO
 
-Only two changes are needed:
-
-1. Connect the CAJOE `VIN` pulse output to UNO digital pin 8 instead of Mega pin 49. Keep `5V` and `GND` connected as shown above.
-2. Compile and upload for the UNO:
-
 ```
 arduino-cli compile --fqbn arduino:avr:uno firmware/geiger_capture
 arduino-cli upload  --fqbn arduino:avr:uno -p /dev/ttyACM0 firmware/geiger_capture
@@ -81,7 +78,7 @@ arduino-cli upload  --fqbn arduino:avr:uno -p /dev/ttyACM0 firmware/geiger_captu
 
 In the Arduino IDE, choose *Tools → Board → Arduino Uno* instead. The Python commands are unchanged. The serial header will report `board=uno capture_pin=8` so you can confirm the correct firmware path was selected.
 
-Notes:
+### Notes:
 
 - Elegoo and other clones usually work with the stock `arduino:avr:mega` target. Clones with a CH340 USB chip show up as `/dev/ttyUSB0` instead of `ttyACM0`.
 - **Linux serial permission:** your user must be in the `dialout` group (Fedora/Debian: `sudo usermod -aG dialout $USER`, then log out and in). Fedora with ModemManager may briefly grab new ports; if uploads fail, retry or `sudo systemctl stop ModemManager`.
