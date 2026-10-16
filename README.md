@@ -1,48 +1,14 @@
 # Geiger-Counter Based QRNG
 
-Uses the commonly available RadiationD-v1.1 (CAJOE) kit with the M4011 tube  → Arduino Mega (hardware time-stamping) → Python (analysis + extraction).
+*Gather quantum entropy at home.*  
+
+Uses the commonly available RadiationD-v1.1 (CAJOE) kit with the M4011 tube  → Arduino Mega (provides hardware time-stamping) → Python (analysis + extraction). See [HARDWARE.md](./HARDWARE.md).
 
 ![Sample capture of 1714 events](./data/geiger-20261013-005942.png)
 
-## Wiring
+## Install the host tools
 
-This powers the Geiger-counter via the Arduino and captures the events with timestamps.
-
-| CAJOE header | Mega |
-|---|---|
-| `GND` | `GND` |
-| 5V | `5V` |
-| `VIN` (this is the **pulse output**) | `pin 49 (ICP4)` |
-
-The pulse is 5 V logic which the Mega handles directly. (On an ESP32, Pi or Pico it needs a voltage divider or level shifter, e.g. 2 kΩ + 3.3 kΩ.)
-
-**Silencing the buzzer:** pull the jumper cap on `J1` (next to `R20`/`C66`). The buzzer stops clicking; the pulse output and the pulse LED (`D23`) are unaffected. Put the cap back to re-enable it.
-
-## Setup
-
-### 1. Flash the firmware
-
-The sketch `firmware/geiger_capture/geiger_capture.ino` timestamps every pulse on Timer4 input capture (pin 49) and streams `seq,ticks` over USB serial at 115200 baud.
-
-With [`arduino-cli`](https://arduino.github.io/arduino-cli/latest/installation/) (single binary; or `brew install arduino-cli`, or the install script on that page):
-
-```
-arduino-cli core update-index
-arduino-cli core install arduino:avr            # one-time: AVR toolchain for the Mega
-arduino-cli board list                          # find the port, e.g. /dev/ttyACM0 (shows "Arduino Mega or Mega 2560")
-arduino-cli compile --fqbn arduino:avr:mega firmware/geiger_capture
-arduino-cli upload  --fqbn arduino:avr:mega -p /dev/ttyACM0 firmware/geiger_capture
-```
-
-Or with the [Arduino IDE](https://www.arduino.cc/en/software): open the `.ino`, choose *Tools → Board → Arduino Mega or Mega 2560* and the port, then Upload. No extra libraries are needed.
-
-Notes:
-- Elegoo and other clones usually work with the stock `arduino:avr:mega` target. Clones with a CH340 USB chip show up as `/dev/ttyUSB0` instead of `ttyACM0`.
-- **Linux serial permission:** your user must be in the `dialout` group (Fedora/Debian: `sudo usermod -aG dialout $USER`, then log out and in). Fedora with ModemManager may briefly grab new ports; if uploads fail, retry or `sudo systemctl stop ModemManager`.
-- Check it works: `arduino-cli monitor -p /dev/ttyACM0 -c baudrate=115200` should print `# qrng-geiger tick_hz=2000000 edge=falling`, then `seq,ticks` lines as pulses arrive (and `# alive` every 10 s). Close the monitor before running `capture`.
-- Falling edge is captured by default; flip `CAPTURE_RISING` at the top of the sketch if you prefer the other edge (either gives valid timing).
-
-### 2. Install the host tools
+I ran this on Fedora Linux.
 
 Python 3.9+ (developed on 3.14) with three packages from PyPI: [numpy](https://pypi.org/project/numpy/) (maths), [matplotlib](https://pypi.org/project/matplotlib/) (dashboard and figures), [pyserial](https://pypi.org/project/pyserial/) (talking to the Mega). No SciPy needed.
 
@@ -141,6 +107,8 @@ No hardware handy (or a demo that must not stall)?
 - **Don't let the laptop sleep during a capture.** USB serial data is lost while it's suspended (a 168 s sleep once silently removed ~1,000 events). Inhibit sleep for the run, e.g. `systemd-inhibit --what=sleep:idle ./qrng.py capture`. Re-flash the firmware after pulling this change so `seq` comes from the Mega.
 
 ## More Information
+
+* [Hardware setup guide](./HARDWARE.md)
 
 * [ESPHome Devices page on RadiationD v1.1(CAJOE)](https://devices.esphome.io/devices/geiger-counter/)
 * [GitHub repo on ESP32 based Geiger counter](https://github.com/SensorsIot/Geiger-Counter-RadiationD-v1.1-CAJOE-) (includes [video tutorial](https://youtu.be/K28Az3-gV7E)) with ESP32
