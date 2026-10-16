@@ -2,7 +2,7 @@
 
 *Gather quantum entropy at home.*  
 
-Uses the commonly available RadiationD-v1.1 (CAJOE) kit with the M4011 tube  → Arduino Mega (provides hardware time-stamping) → Python (analysis + extraction). See [HARDWARE.md](./HARDWARE.md).
+Uses the commonly available RadiationD-v1.1 (CAJOE) kit with the M4011 tube → Arduino Mega or UNO (hardware time-stamping) → Python (analysis + extraction). See [HARDWARE.md](./HARDWARE.md), including the short [UNO adaptation](./HARDWARE.md#arduino-uno).
 
 ![Sample capture of 1714 events](./data/geiger-20261013-005942.png)
 
@@ -10,7 +10,7 @@ Uses the commonly available RadiationD-v1.1 (CAJOE) kit with the M4011 tube  →
 
 I ran this on Fedora Linux.
 
-Python 3.9+ (developed on 3.14) with three packages from PyPI: [numpy](https://pypi.org/project/numpy/) (maths), [matplotlib](https://pypi.org/project/matplotlib/) (dashboard and figures), [pyserial](https://pypi.org/project/pyserial/) (talking to the Mega). No SciPy needed.
+Python 3.9+ (developed on 3.14) with three packages from PyPI: [numpy](https://pypi.org/project/numpy/) (maths), [matplotlib](https://pypi.org/project/matplotlib/) (dashboard and figures), [pyserial](https://pypi.org/project/pyserial/) (talking to the Arduino). No SciPy needed.
 
 ```
 python3 -m venv .venv && . .venv/bin/activate     # optional but tidy
@@ -22,7 +22,7 @@ The live `dashboard` needs a GUI backend for matplotlib; if it complains, instal
 
 ## Use
 
-`capture` finds the Mega automatically (matching Arduino / CH340 / FTDI USB IDs, falling back to the first `/dev/ttyACM*` or `ttyUSB*`) and tells you which port it picked. If you have several boards attached, pass `--port /dev/ttyACM0`. Opening the port resets the Mega, so the first couple of seconds are lost on purpose; the file only contains post-reset data. It shows a rolling 60 s CPM while running.
+`capture` finds the Arduino automatically (matching Arduino / CH340 / FTDI USB IDs, falling back to the first `/dev/ttyACM*` or `ttyUSB*`) and tells you which port it picked. If you have several boards attached, pass `--port /dev/ttyACM0`. Opening the port resets the board, so the first couple of seconds are lost on purpose; the file only contains post-reset data. It shows a rolling 60 s CPM while running.
 
 ```
 ./qrng.py capture                         # real hardware -> data/geiger-<time>.csv  (Ctrl-C to stop)
@@ -33,7 +33,7 @@ The live `dashboard` needs a GUI backend for matplotlib; if it complains, instal
 ./qrng.py generate FILE --raw -o raw.bin  # unconditioned symbols for NIST ea_non_iid
 ```
 
-See [Caveats](#Caveats) for instructions on keeping your machine awake. 
+See [Caveats](#caveats) for instructions on keeping your machine awake.
 
 ### Reports: png, hex, raw and markdown
 
@@ -99,12 +99,18 @@ No hardware handy (or a demo that must not stall)?
 3. Conditioning: SHA-256 over enough symbols to carry 256 + 64 bits of **measured** SP 800-90B MCV min-entropy per 256-bit block.
 4. Also shown for teaching: the classic "compare two gaps" bit method (~1 bit per 3 events).
 
+## Configuration
+
+Common Python defaults—serial speed, tick rate, symbol width, output size, replay speed, dashboard refresh, entropy margin, and USB IDs—are grouped at the top of `qrng.py`. Firmware settings—serial speed, heartbeat interval, ring-buffer size, timer prescaler, and capture edge—are grouped under **User settings** at the top of `firmware/geiger_capture/geiger_capture.ino`.
+
+Keep the firmware's `SERIAL_BAUD` and the host's `DEFAULT_SERIAL_BAUD` equal. The firmware writes its actual timer rate into every capture header, so the analysis automatically uses the selected board's rate.
+
 ## Caveats
 
-- **Rate is the limit.** M4011 background is ~20–40 CPM → ~0.5 events/s → one 32-byte block per ~90 s. For a live demo, put a source near the tube (thoriated lantern mantle, uranium glass, old Am-241 smoke detector element, KCl salt substitute) to get hundreds of CPM. Record a long background run beforehand and use `--replay` as a fallback.
+- **Rate is the limit.** M4011 background is ~20–40 CPM → ~0.5 events/s → one 32-byte block per ~90 s. For a live demo, put a lawful, intact source near the tube (such as uranium glass or KCl salt substitute) to get a higher count rate. Do not dismantle smoke detectors or remove their sources. Record a long background run beforehand and use `--replay` as a fallback.
 - The MCV estimate is a conservative single estimator; for serious claims run NIST's `ea_non_iid` on the `--raw` output, and `dieharder`/`rngtest` on the conditioned output.
 - **Lost events are detected, not hidden.** The firmware numbers every pulse in the interrupt handler, so an event lost anywhere (ring overflow, serial, USB) leaves a gap in `seq`, and no interval is ever measured across it. For files without that guarantee, any gap longer than 20x the typical gap is also split out and reported as an `OUTAGE`.
-- **Don't let the laptop sleep during a capture.** USB serial data is lost while it's suspended (a 168 s sleep once silently removed ~1,000 events). Inhibit sleep for the run, e.g. `systemd-inhibit --what=sleep:idle ./qrng.py capture`. Re-flash the firmware after pulling this change so `seq` comes from the Mega.
+- **Don't let the laptop sleep during a capture.** USB serial data is lost while it's suspended (a 168 s sleep once silently removed ~1,000 events). Inhibit sleep for the run, e.g. `systemd-inhibit --what=sleep:idle ./qrng.py capture`. Re-flash the firmware after pulling this change so `seq` comes from the Arduino.
 
 ## More Information
 

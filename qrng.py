@@ -26,11 +26,23 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+# User-facing defaults. Keep these together so the capture/extraction behavior is easy to tune.
 DEFAULT_HZ = 2_000_000
+DEFAULT_SERIAL_BAUD = 115_200
+DEFAULT_SYMBOL_BITS = 8
+DEFAULT_OUTPUT_BYTES = 32
+DEFAULT_REPLAY_SPEED = 1.0
+DEFAULT_DASHBOARD_REFRESH_S = 1.0
+DEFAULT_NIST22_MODE = "out"
+SIMULATED_DEAD_TIME_US = 150
 OUT_BITS = 256          # bits per conditioned block
 CPM_WINDOW_S = 60       # rolling window for the live CPM readout
 OUTAGE_FACTOR = 20      # a gap > 20x the typical gap (P ~ 2e-9 for a Poisson source) is an outage
 SAFETY_BITS = 64        # extra input entropy per block (SP 800-90C style margin)
+
+# USB vendor IDs used by official Arduino boards and common CH340/FTDI-based clones.
+USB_VENDOR_IDS = {0x2341, 0x2A03, 0x1A86, 0x0403}
+SERIAL_PORT_GLOBS = ("/dev/ttyACM*", "/dev/ttyUSB*")
 
 
 # --------------------------------------------------------------------------- data
@@ -621,14 +633,10 @@ def make_axes():
 
 # --------------------------------------------------------------------------- capture
 
-# USB vendor IDs used by Mega 2560 boards: Arduino, Arduino SA, WCH CH340 (many clones), FTDI.
-MEGA_VIDS = {0x2341, 0x2A03, 0x1A86, 0x0403}
-
-
 def find_port():
-    """Pick the serial port of a Mega-like board; fall back to any ttyACM/ttyUSB."""
+    """Pick an Arduino-like serial port; fall back to any ttyACM/ttyUSB device."""
     from serial.tools import list_ports
-    found = [p for p in list_ports.comports() if p.vid in MEGA_VIDS]
+    found = [p for p in list_ports.comports() if p.vid in USB_VENDOR_IDS]
     if found:
         found.sort(key=lambda p: p.device)
         if len(found) > 1:
@@ -637,7 +645,7 @@ def find_port():
                 print(f"  {p.device}  {p.description}", file=sys.stderr)
         print(f"using {found[0].device} ({found[0].description})", file=sys.stderr)
         return found[0].device
-    ports = sorted(glob.glob("/dev/ttyACM*") + glob.glob("/dev/ttyUSB*"))
+    ports = sorted(p for pattern in SERIAL_PORT_GLOBS for p in glob.glob(pattern))
     if not ports:
         sys.exit("no serial port found; plug in the board or pass --port")
     print(f"no recognised Arduino; guessing {ports[0]}", file=sys.stderr)
@@ -654,7 +662,7 @@ def paced(ticks, hz, speed):
         yield t
 
 
-def sim_ticks(cpm, hz, dead_us=150):
+def sim_ticks(cpm, hz, dead_us=SIMULATED_DEAD_TIME_US):
     rng = np.random.default_rng()
     t = 0
     while True:
@@ -713,7 +721,7 @@ def cmd_capture(a):
                         continue
                     if line.startswith("#"):
                         if "tick_hz=" in line:
-                            # Opening the port resets the Mega: discard events from before the reboot.
+                            # Opening the port resets the Arduino: discard events from before the reboot.
                             f.seek(0)
                             f.truncate()
                             seq = 0
@@ -795,35 +803,57 @@ def cmd_dashboard(a):
     plt.show()
 
 
+def positive_int(value):
+    value = int(value)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be greater than zero")
+    return value
+
+
+def nonnegative_int(value):
+    value = int(value)
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return value
+
+
+def positive_float(value):
+    value = float(value)
+    if not math.isfinite(value) or value <= 0:
+        raise argparse.ArgumentTypeError("must be a finite number greater than zero")
+    return value
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 
     c = sub.add_parser("capture", help="record events to CSV")
-    c.add_argument("--port"); c.add_argument("--baud", type=int, default=115200)
+    c.add_argument("--port"); c.add_argument("--baud", type=positive_int, default=DEFAULT_SERIAL_BAUD)
     c.add_argument("--force", action="store_true", help="overwrite an existing output file")
     c.add_argument("-o", "--output", help="default data/geiger-<timestamp>.csv")
-    c.add_argument("--simulate", type=float, metavar="CPM", help="PRNG-generated Poisson events (NOT quantum)")
-    c.add_argument("--replay", metavar="FILE", help="re-emit a recorded file in real time")
-    c.add_argument("--speed", type=float, default=1.0, help="time scale for --simulate/--replay")
+    source = c.add_mutually_exclusive_group()
+    source.add_argument("--simulate", type=positive_float, metavar="CPM", help="PRNG-generated Poisson events (NOT quantum)")
+    source.add_argument("--replay", metavar="FILE", help="re-emit a recorded file in real time")
+    c.add_argument("--speed", type=positive_float, default=DEFAULT_REPLAY_SPEED, help="time scale for --simulate/--replay")
     c.add_argument("--no-report", action="store_true", help="don't write png/hex/raw/md when the capture ends")
-    c.add_argument("-k", type=int, default=8, choices=range(1, 17), metavar="1-16",
-                   help="low bits of each gap to use in the final report (default 8)")
-    c.add_argument("--nist22", choices=("none", "out", "raw", "both"), default="out",
+    c.add_argument("-k", type=int, default=DEFAULT_SYMBOL_BITS, choices=range(1, 17), metavar="1-16",
+                   help=f"low bits of each gap to use in the final report (default {DEFAULT_SYMBOL_BITS})")
+    c.add_argument("--nist22", choices=("none", "out", "raw", "both"), default=DEFAULT_NIST22_MODE,
                    help="SP 800-22 in the final report: conditioned output (default), raw, both, or none")
     c.set_defaults(fn=cmd_capture)
 
     for name, fn in (("analyze", cmd_analyze), ("generate", cmd_generate), ("dashboard", cmd_dashboard), ("nist22", cmd_nist22), ("report", cmd_report)):
         s = sub.add_parser(name)
         s.add_argument("files", nargs="+", metavar="FILE", help="one or more capture files (pooled)")
-        s.add_argument("-k", type=int, default=8, choices=range(1, 17), metavar="1-16",
-                       help="low bits of each gap to use (default 8)")
+        s.add_argument("-k", type=int, default=DEFAULT_SYMBOL_BITS, choices=range(1, 17), metavar="1-16",
+                       help=f"low bits of each gap to use (default {DEFAULT_SYMBOL_BITS})")
         s.set_defaults(fn=fn)
         if name == "analyze":
             s.add_argument("--png", help="save the dashboard figure")
             s.add_argument("--full", action="store_true", help="extra statistical checks")
         if name == "generate":
-            s.add_argument("-n", "--bytes", type=int, default=32)
+            s.add_argument("-n", "--bytes", type=nonnegative_int, default=DEFAULT_OUTPUT_BYTES)
             s.add_argument("-o", "--output")
             s.add_argument("--raw", action="store_true", help="unconditioned symbols (for NIST ea_non_iid)")
         if name in ("nist22", "report"):
@@ -834,10 +864,10 @@ def main():
         if name == "report":
             s.add_argument("-o", "--output", metavar="BASE", help="output base name (default: the input file name; required for several files)")
             s.add_argument("--force", action="store_true", help="overwrite existing report files")
-            s.add_argument("--nist22", choices=("none", "out", "raw", "both"), default="out",
+            s.add_argument("--nist22", choices=("none", "out", "raw", "both"), default=DEFAULT_NIST22_MODE,
                            help="SP 800-22: conditioned output (default), raw, both, or none")
         if name == "dashboard":
-            s.add_argument("--refresh", type=float, default=1.0)
+            s.add_argument("--refresh", type=positive_float, default=DEFAULT_DASHBOARD_REFRESH_S)
 
     a = p.parse_args()
     a.fn(a)
